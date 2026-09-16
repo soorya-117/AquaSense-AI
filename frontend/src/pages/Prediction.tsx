@@ -17,13 +17,15 @@ import {
 
 export const Prediction: React.FC = () => {
   const [prediction, setPrediction] = useState<WaterDemandPredictionResponse | null>(null);
+  const [selectedHorizon, setSelectedHorizon] = useState<number>(1.0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchPrediction = useCallback(async () => {
+  const fetchPrediction = useCallback(async (horizon?: number) => {
     setIsLoading(true);
     try {
-      const data = await api.getPrediction();
+      const h = horizon !== undefined ? horizon : selectedHorizon;
+      const data = await api.getPrediction(h);
       setPrediction(data);
       setError(null);
     } catch (err: unknown) {
@@ -35,7 +37,7 @@ export const Prediction: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [selectedHorizon]);
 
   useEffect(() => {
     fetchPrediction();
@@ -50,7 +52,7 @@ export const Prediction: React.FC = () => {
       <ErrorState
         title="Prediction Service Error"
         message={error}
-        onRetry={fetchPrediction}
+        onRetry={() => fetchPrediction()}
       />
     );
   }
@@ -121,11 +123,31 @@ export const Prediction: React.FC = () => {
           value={
             isAvailable && prediction
               ? `${prediction.prediction_horizon_hours} hr`
-              : '-- hrs'
+              : `${selectedHorizon} hr`
           }
           subtitle="Forecast planning interval"
           accentColor="indigo"
           icon={<Clock className="w-5 h-5" />}
+          trendBadge={
+            <div className="flex items-center gap-1">
+              {[0.5, 1.0, 2.0, 6.0].map((h) => (
+                <button
+                  key={h}
+                  onClick={() => {
+                    setSelectedHorizon(h);
+                    fetchPrediction(h);
+                  }}
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                    selectedHorizon === h
+                      ? 'bg-indigo-500/30 text-indigo-300 font-semibold border border-indigo-500/40'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  {h}h
+                </button>
+              ))}
+            </div>
+          }
         />
 
         <KpiCard

@@ -34,12 +34,12 @@ export const App: React.FC = () => {
       case 'prediction':
         return {
           title: 'AI Predictive Forecasting',
-          subtitle: 'Future consumption models (Awaiting Account 4 ML Model)',
+          subtitle: 'Linear regression demand forecasting based on historical telemetry',
         };
       case 'water-planning':
         return {
           title: 'Water Supply & Allocation Planning',
-          subtitle: 'Campus tank capacity and zone budgeting (Awaiting Account 4 API)',
+          subtitle: 'Campus reservoir capacity and demand allocation planning',
         };
       case 'system':
         return {

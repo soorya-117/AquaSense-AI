@@ -106,7 +106,10 @@ class WaterDemandPredictor:
 
             pred_flow_raw = float(model.predict(X_next)[0])
             r2_score = float(model.score(X_arr, y_arr))
-            confidence = round(max(0.0, min(100.0, r2_score * 100.0)), 1)
+            if math.isnan(r2_score) or math.isinf(r2_score):
+                confidence = 50.0
+            else:
+                confidence = round(max(0.0, min(100.0, r2_score * 100.0)), 1)
             model_name = "Linear Regression (Sequence & Trend Analysis)"
 
         except Exception:
@@ -125,7 +128,9 @@ class WaterDemandPredictor:
             confidence = 50.0
             model_name = "Deterministic Linear Trend Model"
 
-        # Guard: predicted flow cannot be negative
+        # Guard: predicted flow cannot be negative, NaN, or infinite
+        if math.isnan(pred_flow_raw) or math.isinf(pred_flow_raw):
+            pred_flow_raw = float(y[-1]) if y else 0.0
         predicted_flow = round(max(0.0, pred_flow_raw), 4)
 
         # Volumetric demand (Liters) = flow (L/min) * 60 min/hr * horizon (hr)

@@ -206,12 +206,12 @@ export const AnomalyDetection: React.FC = () => {
                     <td className="px-4 py-2.5 text-slate-300">
                       {new Date(item.timestamp).toLocaleString()}
                     </td>
-                    <td className="px-4 py-2.5 text-cyan-400">{item.sensor1_flow.toFixed(3)} L/min</td>
-                    <td className="px-4 py-2.5 text-indigo-400">{item.sensor2_flow.toFixed(3)} L/min</td>
+                    <td className="px-4 py-2.5 text-cyan-400">{(item.sensor1_flow ?? 0).toFixed(3)} L/min</td>
+                    <td className="px-4 py-2.5 text-indigo-400">{(item.sensor2_flow ?? 0).toFixed(3)} L/min</td>
                     <td className="px-4 py-2.5 text-amber-400 font-semibold">
-                      {item.flow_difference.toFixed(3)} L/min
+                      {(item.flow_difference ?? 0).toFixed(3)} L/min
                     </td>
-                    <td className="px-4 py-2.5">{(item.flow_ratio * 100).toFixed(1)}%</td>
+                    <td className="px-4 py-2.5">{((item.flow_ratio ?? 0) * 100).toFixed(1)}%</td>
                     <td className="px-4 py-2.5">
                       <StatusBadge status={item.status} />
                     </td>

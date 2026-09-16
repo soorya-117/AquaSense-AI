@@ -39,10 +39,14 @@ class Settings(BaseModel):
         "AQUASENSE_DB_PATH", str(BASE_DIR / "aquasense.db")
     )
 
-    # Allowed CORS Origins for React Frontend
+    # Allowed CORS Origins for React Frontend (configurable via AQUASENSE_CORS_ORIGINS)
     CORS_ORIGINS: list[str] = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
+        origin.strip()
+        for origin in os.getenv(
+            "AQUASENSE_CORS_ORIGINS",
+            "http://localhost:5173,http://127.0.0.1:5173",
+        ).split(",")
+        if origin.strip()
     ]
 
     # Water demand prediction parameters

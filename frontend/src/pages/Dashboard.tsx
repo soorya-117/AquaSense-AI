@@ -62,6 +62,23 @@ export const Dashboard: React.FC = () => {
         </div>
       )}
 
+      {latestReading && latestReading.status === 'SENSOR/CALIBRATION ANOMALY' && (
+        <div className="rounded-xl border border-rose-500/40 bg-rose-950/30 p-4 text-rose-300 flex items-center justify-between gap-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <span className="flex h-3 w-3 rounded-full bg-rose-400 animate-ping" />
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-rose-400">
+                Notice: Sensor / Calibration Anomaly Detected
+              </p>
+              <p className="text-xs text-rose-300/80 mt-0.5">
+                Downstream flow exceeds upstream or invalid readings detected. Check sensor wiring or calibration factors.
+              </p>
+            </div>
+          </div>
+          <StatusBadge status="SENSOR/CALIBRATION ANOMALY" />
+        </div>
+      )}
+
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
@@ -98,12 +115,16 @@ export const Dashboard: React.FC = () => {
 
         <KpiCard
           title="Flow Difference"
-          value={hasData && latestReading ? Math.abs(latestReading.flow_difference).toFixed(2) : '--'}
+          value={hasData && latestReading ? latestReading.flow_difference.toFixed(2) : '--'}
           unit="L/min"
           subtitle="Sensor 1 Flow - Sensor 2 Flow"
           accentColor={
-            hasData && latestReading && latestReading.flow_difference > 0.15
-              ? 'amber'
+            hasData && latestReading
+              ? latestReading.status === 'POSSIBLE WATER LOSS'
+                ? 'amber'
+                : latestReading.status === 'SENSOR/CALIBRATION ANOMALY'
+                ? 'rose'
+                : 'slate'
               : 'slate'
           }
           icon={<Scale className="w-5 h-5" />}
@@ -111,12 +132,18 @@ export const Dashboard: React.FC = () => {
             hasData && latestReading ? (
               <span
                 className={`font-semibold text-[10px] ${
-                  latestReading.flow_difference > 0.15
+                  latestReading.status === 'POSSIBLE WATER LOSS'
                     ? 'text-amber-400'
+                    : latestReading.status === 'SENSOR/CALIBRATION ANOMALY'
+                    ? 'text-rose-400'
                     : 'text-emerald-400'
                 }`}
               >
-                {latestReading.flow_difference > 0.15 ? 'Loss gap' : 'Balanced'}
+                {latestReading.status === 'POSSIBLE WATER LOSS'
+                  ? 'Loss gap'
+                  : latestReading.status === 'SENSOR/CALIBRATION ANOMALY'
+                  ? 'Anomaly'
+                  : 'Balanced'}
               </span>
             ) : undefined
           }
