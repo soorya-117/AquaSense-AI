@@ -2,6 +2,10 @@
 
 from typing import Optional
 from fastapi import APIRouter, Query, status
+from backend.app.prediction import (
+    default_demand_predictor,
+    default_supply_planner,
+)
 from backend.app.schemas import (
     AnalyticsSummaryResponse,
     AnomalyRecordResponse,
@@ -12,6 +16,9 @@ from backend.app.schemas import (
     HourlyAnalyticsItem,
     LiveStatusResponse,
     SensorReadingResponse,
+    SupplyPlanRequest,
+    SupplyPlanResponse,
+    WaterDemandPredictionResponse,
 )
 from backend.app.services import (
     get_analytics_summary,
@@ -139,6 +146,56 @@ def get_anomaly_events(
 ):
     """Retrieve detected water loss and anomaly incidents."""
     return get_anomalies(limit=limit, offset=offset, status_filter=status)
+
+
+@router.get(
+    "/api/prediction",
+    response_model=WaterDemandPredictionResponse,
+    summary="Water Demand Prediction",
+    description=(
+        "Forecasts upcoming water demand rate (L/min) and volumetric demand (Liters) "
+        "from real historical SQLite telemetry using interpretable Linear Regression. "
+        "Returns 'insufficient_data' if fewer than the minimum required samples exist."
+    ),
+)
+def get_prediction(
+    horizon_hours: Optional[float] = Query(
+        None,
+        gt=0.0,
+        le=72.0,
+        description="Forecast horizon in hours (defaults to 1.0 hr)",
+    ),
+):
+    """Retrieve water demand prediction based on real telemetry."""
+    return default_demand_predictor.predict(horizon_hours=horizon_hours)
+
+
+@router.post(
+    "/api/supply",
+    response_model=SupplyPlanResponse,
+    summary="Evaluate Water Supply Allocation Plan",
+    description=(
+        "Evaluates water supply adequacy (SUFFICIENT vs POTENTIAL SHORTAGE) "
+        "by comparing available water against forecasted demand."
+    ),
+)
+def create_supply_plan(payload: SupplyPlanRequest):
+    """Evaluate supply adequacy against real demand forecast."""
+    return default_supply_planner.evaluate_supply(
+        available_water_liters=payload.available_water_liters,
+        horizon_hours=payload.planning_horizon_hours,
+    )
+
+
+@router.get(
+    "/api/supply",
+    response_model=SupplyPlanResponse,
+    summary="Get Current Water Supply Allocation Plan",
+    description="Retrieves the current or latest evaluated water supply allocation status.",
+)
+def get_current_supply_plan():
+    """Retrieve the current water supply allocation plan."""
+    return default_supply_planner.get_latest_plan()
 
 
 @router.get(

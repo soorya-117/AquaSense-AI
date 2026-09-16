@@ -104,6 +104,36 @@ export interface AnomalyRecord {
   details: string;
 }
 
+export interface WaterDemandPredictionResponse {
+  status: string;
+  is_available: boolean;
+  predicted_demand_liters: number | null;
+  predicted_flow_lmin: number | null;
+  model_name: string | null;
+  observations_used: number;
+  confidence_score: number | null;
+  prediction_horizon_hours: number;
+  message: string;
+  timestamp: string;
+}
+
+export interface SupplyPlanRequest {
+  available_water_liters: number;
+  planning_horizon_hours?: number;
+}
+
+export interface SupplyPlanResponse {
+  status: string;
+  planning_status: string | null;
+  available_water_liters: number;
+  predicted_demand_liters: number | null;
+  surplus_liters: number | null;
+  prediction_available: boolean;
+  planning_horizon_hours: number;
+  message: string;
+  timestamp: string;
+}
+
 export interface HealthResponse {
   status: string;
   database: string;

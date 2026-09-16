@@ -10,6 +10,9 @@ import {
   HistoryResponse,
   HourlyAnalyticsItem,
   LiveStatusResponse,
+  SupplyPlanRequest,
+  SupplyPlanResponse,
+  WaterDemandPredictionResponse,
 } from './types';
 
 export const API_BASE_URL =
@@ -116,17 +119,28 @@ class ApiClient {
   }
 
   /**
-   * GET /api/prediction - Placeholder ready for Account 4.
+   * GET /api/prediction - Returns water demand prediction based on real telemetry.
    */
-  async getPrediction(): Promise<unknown> {
-    return this.request<unknown>('/api/prediction');
+  async getPrediction(horizonHours?: number): Promise<WaterDemandPredictionResponse> {
+    const query = horizonHours ? `?horizon_hours=${encodeURIComponent(horizonHours)}` : '';
+    return this.request<WaterDemandPredictionResponse>(`/api/prediction${query}`);
   }
 
   /**
-   * GET /api/supply - Placeholder ready for Account 4.
+   * GET /api/supply - Returns current or latest evaluated water supply allocation status.
    */
-  async getSupply(): Promise<unknown> {
-    return this.request<unknown>('/api/supply');
+  async getSupply(): Promise<SupplyPlanResponse> {
+    return this.request<SupplyPlanResponse>('/api/supply');
+  }
+
+  /**
+   * POST /api/supply - Evaluates water supply adequacy against predicted demand.
+   */
+  async submitSupplyPlan(data: SupplyPlanRequest): Promise<SupplyPlanResponse> {
+    return this.request<SupplyPlanResponse>('/api/supply', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 }
 

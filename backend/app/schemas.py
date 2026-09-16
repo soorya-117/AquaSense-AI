@@ -126,6 +126,51 @@ class AnomalyRecordResponse(BaseModel):
     details: str
 
 
+class WaterDemandPredictionResponse(BaseModel):
+    """Water demand prediction generated from historical telemetry."""
+
+    status: str
+    is_available: bool
+    predicted_demand_liters: Optional[float] = None
+    predicted_flow_lmin: Optional[float] = None
+    model_name: Optional[str] = None
+    observations_used: int
+    confidence_score: Optional[float] = None
+    prediction_horizon_hours: float
+    message: str
+    timestamp: str
+
+
+class SupplyPlanRequest(BaseModel):
+    """Request payload to evaluate water supply allocation."""
+
+    available_water_liters: float = Field(
+        ...,
+        ge=0.0,
+        description="Available water supply volume in Liters (must be non-negative)",
+    )
+    planning_horizon_hours: Optional[float] = Field(
+        1.0,
+        gt=0.0,
+        le=72.0,
+        description="Planning window in hours (default 1.0 hr)",
+    )
+
+
+class SupplyPlanResponse(BaseModel):
+    """Water supply allocation evaluation comparing available water against demand."""
+
+    status: str
+    planning_status: Optional[str] = None
+    available_water_liters: float
+    predicted_demand_liters: Optional[float] = None
+    surplus_liters: Optional[float] = None
+    prediction_available: bool
+    planning_horizon_hours: float
+    message: str
+    timestamp: str
+
+
 class HealthResponse(BaseModel):
     """System health and database connectivity report."""
 

@@ -15,6 +15,7 @@ settings.DB_PATH = TEST_DB_PATH
 
 from backend.app.database import init_db
 from backend.app.main import app
+from backend.app.prediction import default_supply_planner
 
 
 @pytest.fixture(autouse=True)
@@ -26,7 +27,9 @@ def setup_and_teardown_db():
         except PermissionError:
             pass
     init_db(TEST_DB_PATH)
+    default_supply_planner.reset()
     yield
+    default_supply_planner.reset()
     if os.path.exists(TEST_DB_PATH):
         try:
             os.remove(TEST_DB_PATH)
@@ -566,3 +569,206 @@ def test_ml_experiment_scaffold_no_fake_data():
     assert pred["status"] == "POSSIBLE WATER LOSS"
     assert pred["flow_difference"] == 2.0
     assert pred["flow_ratio"] == 0.8
+
+
+# =====================================================================
+# ACCOUNT 4: WATER DEMAND PREDICTION & WATER PLANNING TEST SUITE
+# =====================================================================
+
+
+def test_prediction_empty_database(client):
+    """Test GET /api/prediction on a completely empty database."""
+    response = client.get("/api/prediction")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_available"] is False
+    assert data["status"] == "insufficient_data"
+    assert data["message"] == "Insufficient historical data for prediction."
+    assert data["predicted_demand_liters"] is None
+    assert data["predicted_flow_lmin"] is None
+    assert data["observations_used"] == 0
+    assert data["prediction_horizon_hours"] == 1.0
+
+
+def test_prediction_insufficient_data_reports_cleanly(client):
+    """Test GET /api/prediction with 5 readings (< 10 required) returns clean message."""
+    # Post 5 valid readings
+    for _ in range(5):
+        client.post("/data", json={"sensor1_pulses": 980, "sensor2_pulses": 784})
+
+    response = client.get("/api/prediction")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_available"] is False
+    assert data["status"] == "insufficient_data"
+    assert data["message"] == "Insufficient historical data for prediction."
+    assert data["predicted_demand_liters"] is None
+    assert data["predicted_flow_lmin"] is None
+    assert data["observations_used"] == 5
+
+
+def test_prediction_does_not_fabricate_data(client):
+    """Test that predictor refuses to generate numbers when real data is insufficient."""
+    # With 0, 1, and 9 readings, demand must remain None, never synthetic
+    for count in [0, 1, 9]:
+        conn = sqlite3.connect(TEST_DB_PATH)
+        conn.cursor().execute("DELETE FROM sensor_readings")
+        conn.commit()
+        conn.close()
+
+        for _ in range(count):
+            client.post("/data", json={"sensor1_pulses": 980, "sensor2_pulses": 784})
+
+        res = client.get("/api/prediction")
+        assert res.status_code == 200
+        d = res.json()
+        assert d["is_available"] is False
+        assert d["predicted_demand_liters"] is None
+        assert d["predicted_flow_lmin"] is None
+        assert d["observations_used"] == count
+
+
+def test_prediction_sufficient_real_telemetry(client):
+    """Test GET /api/prediction with 15 real telemetry records."""
+    for i in range(15):
+        pulses = 980 + (i % 3) * 49
+        client.post("/data", json={"sensor1_pulses": pulses, "sensor2_pulses": 784})
+
+    response = client.get("/api/prediction")
+    assert response.status_code == 200
+    data = response.json()
+
+    # Schema validation
+    assert data["is_available"] is True
+    assert data["status"] == "available"
+    assert "Linear Regression" in data["model_name"]
+    assert data["observations_used"] == 15
+    assert data["prediction_horizon_hours"] == 1.0
+    assert data["predicted_flow_lmin"] > 0.0
+    assert data["predicted_demand_liters"] > 0.0
+    # Expected demand for 1 hour at ~10-11 L/min: approx 500 - 800 L
+    assert 500.0 < data["predicted_demand_liters"] < 800.0
+    assert data["confidence_score"] is not None
+
+
+def test_prediction_custom_horizon(client):
+    """Test GET /api/prediction with custom horizon_hours query parameter."""
+    for _ in range(12):
+        client.post("/data", json={"sensor1_pulses": 980, "sensor2_pulses": 784})
+
+    res_1h = client.get("/api/prediction?horizon_hours=1.0").json()
+    res_2h = client.get("/api/prediction?horizon_hours=2.0").json()
+
+    assert res_1h["is_available"] is True
+    assert res_2h["is_available"] is True
+    assert res_1h["prediction_horizon_hours"] == 1.0
+    assert res_2h["prediction_horizon_hours"] == 2.0
+    assert pytest.approx(res_2h["predicted_demand_liters"], rel=0.1) == res_1h["predicted_demand_liters"] * 2.0
+
+
+def test_prediction_zero_flow_handled_gracefully(client):
+    """Test predictor handles all zero-flow readings without crashing or negative values."""
+    for _ in range(12):
+        client.post("/data", json={"sensor1_pulses": 0, "sensor2_pulses": 0})
+
+    response = client.get("/api/prediction")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_available"] is True
+    assert data["predicted_flow_lmin"] == 0.0
+    assert data["predicted_demand_liters"] == 0.0
+
+
+def test_supply_planning_when_prediction_unavailable(client):
+    """Test POST /api/supply when insufficient data prevents demand prediction."""
+    response = client.post("/api/supply", json={"available_water_liters": 500.0})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["prediction_available"] is False
+    assert data["status"] == "INSUFFICIENT_DATA"
+    assert data["planning_status"] is None
+    assert data["available_water_liters"] == 500.0
+    assert data["predicted_demand_liters"] is None
+    assert data["surplus_liters"] is None
+    assert "Planning cannot be completed" in data["message"]
+
+
+def test_supply_planning_sufficient_water(client):
+    """Test POST /api/supply when available water >= predicted demand (SUFFICIENT)."""
+    for _ in range(12):
+        client.post("/data", json={"sensor1_pulses": 980, "sensor2_pulses": 784})
+
+    # Available water is 1000 L, which is > ~600 L demand
+    response = client.post("/api/supply", json={"available_water_liters": 1000.0})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["prediction_available"] is True
+    assert data["status"] == "SUFFICIENT"
+    assert data["planning_status"] == "SUFFICIENT"
+    assert data["available_water_liters"] == 1000.0
+    assert data["predicted_demand_liters"] > 0
+    # surplus = available - predicted_demand
+    expected_surplus = round(1000.0 - data["predicted_demand_liters"], 4)
+    assert data["surplus_liters"] == expected_surplus
+    assert data["surplus_liters"] > 0
+    assert "SUFFICIENT" in data["message"]
+
+
+def test_supply_planning_potential_shortage(client):
+    """Test POST /api/supply when available water < predicted demand (POTENTIAL SHORTAGE)."""
+    for _ in range(12):
+        client.post("/data", json={"sensor1_pulses": 980, "sensor2_pulses": 784})
+
+    # Available water is only 200 L, which is < ~600 L demand
+    response = client.post("/api/supply", json={"available_water_liters": 200.0})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["prediction_available"] is True
+    assert data["status"] == "POTENTIAL SHORTAGE"
+    assert data["planning_status"] == "POTENTIAL SHORTAGE"
+    assert data["available_water_liters"] == 200.0
+    assert data["predicted_demand_liters"] > 200.0
+    # surplus = available - predicted_demand (negative for shortage)
+    expected_surplus = round(200.0 - data["predicted_demand_liters"], 4)
+    assert data["surplus_liters"] == expected_surplus
+    assert data["surplus_liters"] < 0
+    assert "POTENTIAL SHORTAGE" in data["message"]
+    assert "POTENTIAL SHORTAGE" in data["status"]
+
+
+def test_supply_planning_negative_water_validation(client):
+    """Test POST /api/supply rejects negative water quantity with 422."""
+    response = client.post("/api/supply", json={"available_water_liters": -50.0})
+    assert response.status_code == 422
+
+
+def test_supply_planning_invalid_input(client):
+    """Test POST /api/supply rejects non-numeric water input with 422."""
+    response = client.post("/api/supply", json={"available_water_liters": "one hundred"})
+    assert response.status_code == 422
+
+
+def test_get_supply_endpoint(client):
+    """Test GET /api/supply retrieves cached latest plan or default evaluation."""
+    res_init = client.get("/api/supply")
+    assert res_init.status_code == 200
+    data_init = res_init.json()
+    assert data_init["prediction_available"] is False
+
+    # Seed 12 readings
+    for _ in range(12):
+        client.post("/data", json={"sensor1_pulses": 980, "sensor2_pulses": 784})
+
+    # Submit plan
+    res_post = client.post("/api/supply", json={"available_water_liters": 750.0})
+    assert res_post.status_code == 200
+    post_data = res_post.json()
+
+    # GET /api/supply should match the submitted plan
+    res_get = client.get("/api/supply")
+    assert res_get.status_code == 200
+    get_data = res_get.json()
+    assert get_data["available_water_liters"] == 750.0
+    assert get_data["status"] == post_data["status"]
+    assert get_data["predicted_demand_liters"] == post_data["predicted_demand_liters"]
+    assert get_data["surplus_liters"] == post_data["surplus_liters"]

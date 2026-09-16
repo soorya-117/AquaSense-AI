@@ -45,5 +45,13 @@ class Settings(BaseModel):
         "http://127.0.0.1:5173",
     ]
 
+    # Water demand prediction parameters
+    MIN_PREDICTION_SAMPLES: int = int(
+        os.getenv("AQUASENSE_MIN_PREDICTION_SAMPLES", "10")
+    )
+    DEFAULT_PREDICTION_HORIZON_HOURS: float = float(
+        os.getenv("AQUASENSE_PREDICTION_HORIZON_HOURS", "1.0")
+    )
+
 
 settings = Settings()
