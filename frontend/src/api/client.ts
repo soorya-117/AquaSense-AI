@@ -4,8 +4,11 @@
 
 import {
   AnalyticsSummaryResponse,
+  AnomalyRecord,
+  DailyAnalyticsItem,
   HealthResponse,
   HistoryResponse,
+  HourlyAnalyticsItem,
   LiveStatusResponse,
 } from './types';
 
@@ -71,6 +74,38 @@ class ApiClient {
    */
   async getAnalytics(): Promise<AnalyticsSummaryResponse> {
     return this.request<AnalyticsSummaryResponse>('/api/analytics/summary');
+  }
+
+  /**
+   * GET /api/analytics/hourly - Returns hourly aggregated water flow and volume telemetry.
+   */
+  async getHourlyAnalytics(): Promise<HourlyAnalyticsItem[]> {
+    return this.request<HourlyAnalyticsItem[]>('/api/analytics/hourly');
+  }
+
+  /**
+   * GET /api/analytics/daily - Returns daily aggregated water flow and volume telemetry.
+   */
+  async getDailyAnalytics(): Promise<DailyAnalyticsItem[]> {
+    return this.request<DailyAnalyticsItem[]>('/api/analytics/daily');
+  }
+
+  /**
+   * GET /api/anomalies - Returns detected water loss and sensor anomaly incidents.
+   */
+  async getAnomalies(
+    limit: number = 100,
+    offset: number = 0,
+    status?: string
+  ): Promise<AnomalyRecord[]> {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+    if (status) {
+      params.set('status', status);
+    }
+    return this.request<AnomalyRecord[]>(`/api/anomalies?${params.toString()}`);
   }
 
   /**

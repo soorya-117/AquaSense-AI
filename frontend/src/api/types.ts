@@ -40,7 +40,12 @@ export interface AnalyticsSummaryResponse {
   total_volume_sensor2_liters: number;
   average_flow_sensor1_lmin: number;
   average_flow_sensor2_lmin: number;
+  flow_difference?: number;
+  flow_ratio?: number;
   estimated_water_loss_liters: number;
+  estimated_water_loss?: number;
+  cumulative_upstream_volume_liters?: number;
+  cumulative_downstream_volume_liters?: number;
   status_counts: {
     NORMAL?: number;
     'POSSIBLE WATER LOSS'?: number;
@@ -48,6 +53,55 @@ export interface AnalyticsSummaryResponse {
     [key: string]: number | undefined;
   };
   latest_status: string | null;
+}
+
+export interface HourlyAnalyticsItem {
+  hour: string;
+  timestamp: string;
+  upstream_volume_liters: number;
+  downstream_volume_liters: number;
+  upstream_volume?: number;
+  downstream_volume?: number;
+  average_flow_sensor1_lmin: number;
+  average_flow_sensor2_lmin: number;
+  flow_difference: number;
+  flow_ratio: number;
+  estimated_water_loss_liters: number;
+  estimated_water_loss?: number;
+  reading_count: number;
+}
+
+export interface DailyAnalyticsItem {
+  date: string;
+  upstream_volume_liters: number;
+  downstream_volume_liters: number;
+  upstream_volume?: number;
+  downstream_volume?: number;
+  estimated_water_loss_liters: number;
+  estimated_water_loss?: number;
+  average_flow_sensor1_lmin: number;
+  average_upstream_flow?: number;
+  average_flow_sensor2_lmin: number;
+  average_downstream_flow?: number;
+  flow_difference: number;
+  flow_ratio: number;
+  reading_count: number;
+}
+
+export interface AnomalyRecord {
+  id: number;
+  timestamp: string;
+  sensor1_pulses: number;
+  sensor2_pulses: number;
+  sensor1_flow: number;
+  sensor2_flow: number;
+  sensor1_volume: number;
+  sensor2_volume: number;
+  flow_difference: number;
+  flow_ratio: number;
+  status: WaterStatus | string;
+  anomaly_type: string;
+  details: string;
 }
 
 export interface HealthResponse {

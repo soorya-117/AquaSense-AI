@@ -1,18 +1,25 @@
 """API route handlers for AquaSense AI."""
 
+from typing import Optional
 from fastapi import APIRouter, Query, status
 from backend.app.schemas import (
     AnalyticsSummaryResponse,
+    AnomalyRecordResponse,
+    DailyAnalyticsItem,
     ESP32DataPayload,
     HealthResponse,
     HistoryResponse,
+    HourlyAnalyticsItem,
     LiveStatusResponse,
     SensorReadingResponse,
 )
 from backend.app.services import (
     get_analytics_summary,
+    get_anomalies,
+    get_daily_analytics,
     get_health_status,
     get_history,
+    get_hourly_analytics,
     get_live_status,
     record_reading,
 )
@@ -85,6 +92,53 @@ def get_reading_history(
 def get_analytics():
     """Retrieve aggregate water analytics and status counts."""
     return get_analytics_summary()
+
+
+@router.get(
+    "/api/analytics/hourly",
+    response_model=list[HourlyAnalyticsItem],
+    summary="Hourly Water Telemetry & Analytics",
+    description="Aggregates real sensor readings grouped by hour from SQLite.",
+)
+def get_hourly():
+    """Retrieve hourly aggregated water telemetry."""
+    return get_hourly_analytics()
+
+
+@router.get(
+    "/api/analytics/daily",
+    response_model=list[DailyAnalyticsItem],
+    summary="Daily Water Telemetry & Analytics",
+    description="Aggregates real sensor readings grouped by day from SQLite.",
+)
+def get_daily():
+    """Retrieve daily aggregated water telemetry."""
+    return get_daily_analytics()
+
+
+@router.get(
+    "/api/anomalies",
+    response_model=list[AnomalyRecordResponse],
+    summary="Detected Water Loss & Sensor Anomalies",
+    description=(
+        "Retrieves detected non-NORMAL events (Possible Water Loss and Sensor/Calibration Anomalies) "
+        "with rule-based diagnostic details."
+    ),
+)
+def get_anomaly_events(
+    limit: int = Query(
+        100, ge=1, le=1000, description="Max number of anomaly records to return"
+    ),
+    offset: int = Query(
+        0, ge=0, description="Number of anomaly records to skip for pagination"
+    ),
+    status: Optional[str] = Query(
+        None,
+        description="Filter by status: 'POSSIBLE WATER LOSS' or 'SENSOR/CALIBRATION ANOMALY'",
+    ),
+):
+    """Retrieve detected water loss and anomaly incidents."""
+    return get_anomalies(limit=limit, offset=offset, status_filter=status)
 
 
 @router.get(

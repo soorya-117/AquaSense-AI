@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAnalytics } from '../hooks/useAnalytics';
+import { api } from '../api/client';
+import { AnomalyRecord } from '../api/types';
 import { KpiCard } from '../components/common/KpiCard';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { EmptyState } from '../components/common/EmptyState';
@@ -15,7 +17,26 @@ import {
 } from 'lucide-react';
 
 export const AnomalyDetection: React.FC = () => {
-  const { analytics, history, isLoading, error, refresh } = useAnalytics(100);
+  const { analytics, history, isLoading, error, refresh: refreshAnalytics } = useAnalytics(100);
+  const [anomalies, setAnomalies] = useState<AnomalyRecord[]>([]);
+
+  const fetchAnomalies = useCallback(async () => {
+    try {
+      const data = await api.getAnomalies(100, 0);
+      setAnomalies(data || []);
+    } catch {
+      // Graceful fallback to filtered history if needed
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAnomalies();
+  }, [fetchAnomalies]);
+
+  const refresh = () => {
+    refreshAnalytics();
+    fetchAnomalies();
+  };
 
   if (isLoading && !analytics) {
     return <LoadingState message="Loading system anomaly telemetry..." />;
@@ -37,10 +58,15 @@ export const AnomalyDetection: React.FC = () => {
   const anomalyCount = statusCounts['SENSOR/CALIBRATION ANOMALY'] || 0;
   const totalReadings = analytics?.total_readings || 0;
 
-  // Filter history for flagged events
-  const flaggedReadings = history.filter(
-    (r) => r.status === 'POSSIBLE WATER LOSS' || r.status === 'SENSOR/CALIBRATION ANOMALY'
-  );
+  // Prefer backend /api/anomalies endpoint, fallback to filtered history
+  const flaggedReadings =
+    anomalies.length > 0
+      ? anomalies
+      : history.filter(
+          (r) =>
+            r.status === 'POSSIBLE WATER LOSS' ||
+            r.status === 'SENSOR/CALIBRATION ANOMALY'
+        );
 
   return (
     <div className="space-y-6">

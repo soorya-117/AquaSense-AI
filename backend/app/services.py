@@ -189,6 +189,9 @@ def get_history(
     return total, readings
 
 
+from backend.app.anomaly import default_anomaly_detector
+
+
 def get_analytics_summary(db_path: Optional[str] = None) -> Dict[str, Any]:
     """Compute aggregate water usage statistics and status distributions."""
     with get_db(db_path) as conn:
@@ -227,16 +230,25 @@ def get_analytics_summary(db_path: Optional[str] = None) -> Dict[str, Any]:
         for row in status_rows:
             status_counts[row["status"]] = row["count"]
 
-        # Estimate water loss volume in liters (sum of positive loss intervals)
-        cursor.execute(
-            """
-            SELECT COALESCE(SUM(sensor1_volume - sensor2_volume), 0.0) AS loss_volume
-            FROM sensor_readings
-            WHERE status = 'POSSIBLE WATER LOSS';
-            """
-        )
-        loss_row = cursor.fetchone()
-        estimated_water_loss_liters = max(0.0, float(loss_row["loss_volume"]))
+        # Cumulative volumes
+        upstream_vol = round(float(agg["total_volume_sensor1_liters"]), 4)
+        downstream_vol = round(float(agg["total_volume_sensor2_liters"]), 4)
+        avg_flow_s1 = round(float(agg["average_flow_sensor1_lmin"]), 4)
+        avg_flow_s2 = round(float(agg["average_flow_sensor2_lmin"]), 4)
+
+        # Flow difference (upstream - downstream)
+        flow_difference = round(avg_flow_s1 - avg_flow_s2, 4)
+
+        # Flow ratio with safe zero division guard
+        if avg_flow_s1 > 0.0:
+            flow_ratio = round(avg_flow_s2 / avg_flow_s1, 4)
+        elif avg_flow_s2 == 0.0:
+            flow_ratio = 1.0
+        else:
+            flow_ratio = 0.0
+
+        # Estimated water loss (upstream volume - downstream volume)
+        estimated_water_loss_liters = max(0.0, round(upstream_vol - downstream_vol, 4))
 
         # Latest status
         cursor.execute(
@@ -249,18 +261,182 @@ def get_analytics_summary(db_path: Optional[str] = None) -> Dict[str, Any]:
         "total_readings": agg["total_readings"],
         "total_pulses_sensor1": agg["total_pulses_sensor1"],
         "total_pulses_sensor2": agg["total_pulses_sensor2"],
-        "total_volume_sensor1_liters": round(
-            agg["total_volume_sensor1_liters"], 4
-        ),
-        "total_volume_sensor2_liters": round(
-            agg["total_volume_sensor2_liters"], 4
-        ),
-        "average_flow_sensor1_lmin": round(agg["average_flow_sensor1_lmin"], 4),
-        "average_flow_sensor2_lmin": round(agg["average_flow_sensor2_lmin"], 4),
-        "estimated_water_loss_liters": round(estimated_water_loss_liters, 4),
+        "total_volume_sensor1_liters": upstream_vol,
+        "total_volume_sensor2_liters": downstream_vol,
+        "cumulative_upstream_volume_liters": upstream_vol,
+        "cumulative_downstream_volume_liters": downstream_vol,
+        "average_flow_sensor1_lmin": avg_flow_s1,
+        "average_flow_sensor2_lmin": avg_flow_s2,
+        "flow_difference": flow_difference,
+        "flow_ratio": flow_ratio,
+        "estimated_water_loss_liters": estimated_water_loss_liters,
+        "estimated_water_loss": estimated_water_loss_liters,
         "status_counts": status_counts,
         "latest_status": latest_status,
     }
+
+
+def get_hourly_analytics(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Aggregate real sensor readings by hour from SQLite."""
+    with get_db(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                COALESCE(strftime('%Y-%m-%dT%H:00:00', timestamp), substr(timestamp, 1, 13) || ':00:00') AS hour_slot,
+                COUNT(*) AS reading_count,
+                COALESCE(SUM(sensor1_volume), 0.0) AS upstream_volume_liters,
+                COALESCE(SUM(sensor2_volume), 0.0) AS downstream_volume_liters,
+                COALESCE(AVG(sensor1_flow), 0.0) AS average_flow_sensor1_lmin,
+                COALESCE(AVG(sensor2_flow), 0.0) AS average_flow_sensor2_lmin
+            FROM sensor_readings
+            GROUP BY hour_slot
+            ORDER BY hour_slot ASC;
+            """
+        )
+        rows = cursor.fetchall()
+
+    hourly = []
+    for row in rows:
+        hour_slot = str(row["hour_slot"])
+        upstream_vol = round(float(row["upstream_volume_liters"]), 4)
+        downstream_vol = round(float(row["downstream_volume_liters"]), 4)
+        avg_flow_s1 = round(float(row["average_flow_sensor1_lmin"]), 4)
+        avg_flow_s2 = round(float(row["average_flow_sensor2_lmin"]), 4)
+        flow_diff = round(avg_flow_s1 - avg_flow_s2, 4)
+        loss = max(0.0, round(upstream_vol - downstream_vol, 4))
+
+        if avg_flow_s1 > 0.0:
+            ratio = round(avg_flow_s2 / avg_flow_s1, 4)
+        elif avg_flow_s2 == 0.0:
+            ratio = 1.0
+        else:
+            ratio = 0.0
+
+        hourly.append({
+            "hour": hour_slot,
+            "timestamp": hour_slot,
+            "upstream_volume_liters": upstream_vol,
+            "downstream_volume_liters": downstream_vol,
+            "upstream_volume": upstream_vol,
+            "downstream_volume": downstream_vol,
+            "average_flow_sensor1_lmin": avg_flow_s1,
+            "average_flow_sensor2_lmin": avg_flow_s2,
+            "flow_difference": flow_diff,
+            "flow_ratio": ratio,
+            "estimated_water_loss_liters": loss,
+            "estimated_water_loss": loss,
+            "reading_count": int(row["reading_count"]),
+        })
+
+    return hourly
+
+
+def get_daily_analytics(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Aggregate real sensor readings by day from SQLite."""
+    with get_db(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                COALESCE(strftime('%Y-%m-%d', timestamp), substr(timestamp, 1, 10)) AS date_slot,
+                COUNT(*) AS reading_count,
+                COALESCE(SUM(sensor1_volume), 0.0) AS upstream_volume_liters,
+                COALESCE(SUM(sensor2_volume), 0.0) AS downstream_volume_liters,
+                COALESCE(AVG(sensor1_flow), 0.0) AS average_flow_sensor1_lmin,
+                COALESCE(AVG(sensor2_flow), 0.0) AS average_flow_sensor2_lmin
+            FROM sensor_readings
+            GROUP BY date_slot
+            ORDER BY date_slot ASC;
+            """
+        )
+        rows = cursor.fetchall()
+
+    daily = []
+    for row in rows:
+        date_slot = str(row["date_slot"])
+        upstream_vol = round(float(row["upstream_volume_liters"]), 4)
+        downstream_vol = round(float(row["downstream_volume_liters"]), 4)
+        avg_flow_s1 = round(float(row["average_flow_sensor1_lmin"]), 4)
+        avg_flow_s2 = round(float(row["average_flow_sensor2_lmin"]), 4)
+        flow_diff = round(avg_flow_s1 - avg_flow_s2, 4)
+        loss = max(0.0, round(upstream_vol - downstream_vol, 4))
+
+        if avg_flow_s1 > 0.0:
+            ratio = round(avg_flow_s2 / avg_flow_s1, 4)
+        elif avg_flow_s2 == 0.0:
+            ratio = 1.0
+        else:
+            ratio = 0.0
+
+        daily.append({
+            "date": date_slot,
+            "upstream_volume_liters": upstream_vol,
+            "downstream_volume_liters": downstream_vol,
+            "upstream_volume": upstream_vol,
+            "downstream_volume": downstream_vol,
+            "estimated_water_loss_liters": loss,
+            "estimated_water_loss": loss,
+            "average_flow_sensor1_lmin": avg_flow_s1,
+            "average_upstream_flow": avg_flow_s1,
+            "average_flow_sensor2_lmin": avg_flow_s2,
+            "average_downstream_flow": avg_flow_s2,
+            "flow_difference": flow_diff,
+            "flow_ratio": ratio,
+            "reading_count": int(row["reading_count"]),
+        })
+
+    return daily
+
+
+def get_anomalies(
+    limit: int = 100,
+    offset: int = 0,
+    status_filter: Optional[str] = None,
+    db_path: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Retrieve detected water loss and sensor anomaly events with rule-based evaluation."""
+    detector = default_anomaly_detector
+    with get_db(db_path) as conn:
+        cursor = conn.cursor()
+        if status_filter:
+            cursor.execute(
+                """
+                SELECT * FROM sensor_readings
+                WHERE status = ?
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?;
+                """,
+                (status_filter, limit, offset),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT * FROM sensor_readings
+                WHERE status != 'NORMAL'
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?;
+                """,
+                (limit, offset),
+            )
+        rows = cursor.fetchall()
+
+    anomalies = []
+    for row in rows:
+        row_dict = dict(row)
+        eval_result = detector.evaluate(
+            sensor1_flow=row_dict["sensor1_flow"],
+            sensor2_flow=row_dict["sensor2_flow"],
+            sensor1_pulses=row_dict["sensor1_pulses"],
+            sensor2_pulses=row_dict["sensor2_pulses"],
+        )
+        anomalies.append({
+            **row_dict,
+            "anomaly_type": eval_result["anomaly_type"],
+            "details": eval_result["details"],
+        })
+
+    return anomalies
 
 
 def get_health_status(db_path: Optional[str] = None) -> Dict[str, Any]:

@@ -61,9 +61,69 @@ class AnalyticsSummaryResponse(BaseModel):
     total_volume_sensor2_liters: float
     average_flow_sensor1_lmin: float
     average_flow_sensor2_lmin: float
-    estimated_water_loss_liters: float
+    flow_difference: float = 0.0
+    flow_ratio: float = 1.0
+    estimated_water_loss_liters: float = 0.0
+    estimated_water_loss: Optional[float] = None
+    cumulative_upstream_volume_liters: Optional[float] = None
+    cumulative_downstream_volume_liters: Optional[float] = None
     status_counts: dict[str, int]
     latest_status: Optional[str] = None
+
+
+class HourlyAnalyticsItem(BaseModel):
+    """Hourly aggregated water flow and volume telemetry."""
+
+    hour: str
+    timestamp: str
+    upstream_volume_liters: float
+    downstream_volume_liters: float
+    upstream_volume: Optional[float] = None
+    downstream_volume: Optional[float] = None
+    average_flow_sensor1_lmin: float
+    average_flow_sensor2_lmin: float
+    flow_difference: float
+    flow_ratio: float
+    estimated_water_loss_liters: float
+    estimated_water_loss: Optional[float] = None
+    reading_count: int
+
+
+class DailyAnalyticsItem(BaseModel):
+    """Daily aggregated water flow and volume telemetry."""
+
+    date: str
+    upstream_volume_liters: float
+    downstream_volume_liters: float
+    upstream_volume: Optional[float] = None
+    downstream_volume: Optional[float] = None
+    estimated_water_loss_liters: float
+    estimated_water_loss: Optional[float] = None
+    average_flow_sensor1_lmin: float
+    average_upstream_flow: Optional[float] = None
+    average_flow_sensor2_lmin: float
+    average_downstream_flow: Optional[float] = None
+    flow_difference: float
+    flow_ratio: float
+    reading_count: int
+
+
+class AnomalyRecordResponse(BaseModel):
+    """Detailed record of detected water loss or sensor anomaly."""
+
+    id: int
+    timestamp: str
+    sensor1_pulses: int
+    sensor2_pulses: int
+    sensor1_flow: float
+    sensor2_flow: float
+    sensor1_volume: float
+    sensor2_volume: float
+    flow_difference: float
+    flow_ratio: float
+    status: str
+    anomaly_type: str
+    details: str
 
 
 class HealthResponse(BaseModel):
